@@ -4,12 +4,12 @@ session_id = public identifier (safe in URLs).
 session_token = cryptographically random secret credential.
 """
 
-import uuid
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import String, Boolean, DateTime, text
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Boolean, DateTime, String, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base

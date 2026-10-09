@@ -6,14 +6,14 @@ DELETE /sessions/{id} — delete with full data cleanup (requires session_token)
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
-from app.schemas.session import SessionCreate, SessionResponse, SessionDeleteResponse
+from app.middleware.session_auth import verify_session_ownership
+from app.schemas.session import SessionCreate, SessionDeleteResponse, SessionResponse
 from app.services import session_service
 from app.services.deletion_service import delete_session_data
-from app.middleware.session_auth import verify_session_ownership
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 

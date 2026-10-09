@@ -9,12 +9,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
+from app.middleware.session_auth import get_authenticated_session
 from app.models.session import Session
 from app.schemas.reminder import (
-    ReminderCreate, ReminderUpdate, ReminderResponse, ReminderListResponse,
+    ReminderCreate,
+    ReminderListResponse,
+    ReminderResponse,
+    ReminderUpdate,
 )
 from app.services import reminder_service
-from app.middleware.session_auth import get_authenticated_session
 
 router = APIRouter(prefix="/tasks/reminders", tags=["reminders"])
 

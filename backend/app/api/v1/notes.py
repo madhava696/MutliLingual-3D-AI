@@ -6,16 +6,13 @@ All endpoints require session_token authentication.
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-"""Query function used to declare query parameters
-with extra metadata, validation, or defaults.
-"""
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
-from app.models.session import Session
-from app.schemas.note import NoteCreate, NoteResponse, NoteListResponse
-from app.services import note_service
 from app.middleware.session_auth import get_authenticated_session
+from app.models.session import Session
+from app.schemas.note import NoteCreate, NoteListResponse, NoteResponse
+from app.services import note_service
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 

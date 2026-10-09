@@ -3,9 +3,10 @@ Application configuration — all settings loaded from environment variables.
 Model names, provider keys, and feature flags are configuration, not code constants.
 """
 
-from pydantic_settings import BaseSettings
 from functools import lru_cache
 from typing import Optional
+
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):

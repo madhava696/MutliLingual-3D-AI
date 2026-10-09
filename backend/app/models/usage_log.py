@@ -7,7 +7,7 @@ after session deletion, but session reference is nullified.
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Integer, Float, DateTime, ForeignKey, Index, text
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 

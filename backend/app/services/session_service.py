@@ -2,15 +2,15 @@
 Session service — create, retrieve, touch (extend expiry), delete sessions.
 """
 
-import uuid
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.session import Session
 from app.config import get_settings
+from app.models.session import Session
 
 
 async def create_session(

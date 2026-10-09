@@ -1,2 +1,42 @@
-project-docs
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
 
+# Environments
+.env
+.env.local
+.venv
+venv/
+ENV/
+
+# Testing & Tooling
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Logs & Temp
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+temp/
+uploads/*
+!uploads/.gitkeep
+
+# Project documentation
+project-docs/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

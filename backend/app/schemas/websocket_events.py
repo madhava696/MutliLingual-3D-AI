@@ -1,8 +1,8 @@
 """Pydantic schemas for WebSocket event protocol."""
 
-from typing import Optional, Any
-from pydantic import BaseModel
+from typing import Any, Optional
 
+from pydantic import BaseModel
 
 # --- Client → Server Events ---
 

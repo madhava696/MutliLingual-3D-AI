@@ -6,10 +6,10 @@ and (later) audio frames.
 
 import json
 import logging
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.database import get_db, async_session_factory
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+from app.db.database import async_session_factory
 from app.services.session_service import get_session_by_token, touch_session
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,6 @@ async def websocket_endpoint(
 ):
     """
     WebSocket endpoint for real-time communication.
-    
     Protocol:
     1. Client connects
     2. Client sends auth event: {"type": "auth", "session_token": "..."}
@@ -62,7 +61,6 @@ async def websocket_endpoint(
     await websocket.accept()
 
     # --- Step 1: Authenticate ---
-    authenticated_session = None
     try:
         # Wait for auth message (timeout could be added)
         raw = await websocket.receive_text()
@@ -89,7 +87,6 @@ async def websocket_endpoint(
                 await websocket.close(code=4001)
                 return
 
-            authenticated_session = session
             await touch_session(db, session)
             await db.commit()
 
@@ -177,17 +174,18 @@ async def handle_text_event(websocket: WebSocket, session_id: str, data: dict):
 
     elif event_type == "session.language":
         language = data.get("language", "en")
-        # Update session language
-        async with async_session_factory() as db:
-            session = await get_session_by_token(db, "")  # TODO: track token in connection
-            # For now, acknowledge
-            await db.commit()
+        logger.info(f"Session {session_id} language set to {language}")
+        # Acknowledge language selection
+        await websocket.send_json({
+            "type": "session.language_updated",
+            "language": language,
+        })
 
     elif event_type == "tool.confirm":
         tool_call_id = data.get("tool_call_id")
         approved = data.get("approved", False)
+        logger.info(f"Tool {tool_call_id} confirmation received: {approved}")
         # TODO: Resume or cancel pending tool execution
-        pass
 
 
 async def handle_audio_frame(websocket: WebSocket, session_id: str, audio_data: bytes):

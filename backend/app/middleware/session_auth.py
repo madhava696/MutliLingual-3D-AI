@@ -7,7 +7,7 @@ Session IDs are public identifiers; session_tokens are the secret credential.
 import uuid
 from typing import Optional
 
-from fastapi import Header, HTTPException, Depends, status
+from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

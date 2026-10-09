@@ -6,14 +6,14 @@ Returns privacy-safe aggregated cost/usage data for a session.
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
+from app.middleware.session_auth import get_authenticated_session
 from app.models.session import Session
 from app.models.usage_log import UsageLog
-from app.schemas.usage import UsageSummaryResponse, UsageByProvider, UsageByTask
-from app.middleware.session_auth import get_authenticated_session
+from app.schemas.usage import UsageByProvider, UsageByTask, UsageSummaryResponse
 
 router = APIRouter(prefix="/usage", tags=["usage"])
 

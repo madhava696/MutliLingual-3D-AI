@@ -6,7 +6,7 @@ storage_path tracks the filesystem location — deletion service must remove thi
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, BigInteger, DateTime, ForeignKey, text
+from sqlalchemy import BigInteger, DateTime, ForeignKey, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 

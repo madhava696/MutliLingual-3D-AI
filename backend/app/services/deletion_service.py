@@ -4,16 +4,15 @@ Comprehensive cleanup: PostgreSQL + Redis + filesystem + temp files.
 Does NOT rely solely on database cascade.
 """
 
-import os
-import uuid
 import glob
 import logging
+import os
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.session import Session
 from app.models.file import UploadedFile
+from app.models.session import Session
 from app.models.usage_log import UsageLog
 
 logger = logging.getLogger(__name__)
