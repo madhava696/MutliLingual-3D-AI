@@ -3,11 +3,11 @@ Async database engine and session factory.
 """
 
 from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
+    AsyncSession,  #Represents a session to execute the db operations async'ly
+    async_sessionmaker,  #create a resuable factory for creating sessions
+    create_async_engine,  #creates the db engine async'ly
 )
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase  #provides base class for defining ORM models
 
 from app.config import get_settings
 
@@ -26,9 +26,9 @@ async def init_db():
     settings = get_settings()
     engine = create_async_engine(
         settings.DATABASE_URL,
-        echo=settings.DEBUG,
-        pool_size=5,
-        max_overflow=10,
+        echo=settings.DEBUG, #Logs SQL statements when debug mode is enabled.
+        pool_size=5, #keep up to 5 conn's in standard conn pool
+        max_overflow=10, # allows up to additional 10 conn beyond mentioned size
     )
     async_session_factory = async_sessionmaker(
         engine,
