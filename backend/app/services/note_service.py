@@ -43,7 +43,7 @@ async def get_notes_by_session(
     return list(result.scalars().all())
 
 
-async def get_note_by_id(
+async def get_note_by_id( #vulnerable to IDOR if authorization check isn't performed 
     db: AsyncSession, note_id: uuid.UUID
 ) -> Note | None:
     """Get a single note by ID."""

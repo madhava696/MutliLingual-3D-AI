@@ -6,15 +6,20 @@ and (later) audio frames.
 
 import json
 import logging
+import uuid
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.db.database import async_session_factory
+from app.orchestrator.engine import get_orchestrator
 from app.services.session_service import get_session_by_token, touch_session
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["websocket"])
+
+# Per-session conversation history (in-memory; will move to Redis later)
+_conversation_histories: dict[str, list[dict]] = {}
 
 
 class ConnectionManager:
@@ -129,12 +134,14 @@ async def websocket_endpoint(
         logger.error(f"WebSocket error for session {session_id}: {e}")
     finally:
         manager.disconnect(session_id)
+        # Clean up conversation history on disconnect
+        _conversation_histories.pop(session_id, None)
 
 
 async def handle_text_event(websocket: WebSocket, session_id: str, data: dict):
     """
     Handle incoming text events from the client.
-    This is the entry point for the text-only vertical slice.
+    Routes through the orchestrator for intent classification → tool/LLM execution.
     """
     event_type = data.get("type")
 
@@ -151,13 +158,71 @@ async def handle_text_event(websocket: WebSocket, session_id: str, data: dict):
             "state": "thinking",
         })
 
-        # TODO: Wire to orchestrator/router
-        # For now, echo back as a placeholder
-        await websocket.send_json({
+        # Get conversation history for context
+        history = _conversation_histories.get(session_id, [])
+
+        # Route through orchestrator
+        async with async_session_factory() as db:
+            orchestrator = get_orchestrator()
+            try:
+                result = await orchestrator.process_message(
+                    db=db,
+                    session_id=uuid.UUID(session_id),
+                    text=content,
+                    language=language,
+                    conversation_history=history,
+                )
+                await db.commit()
+            except Exception as e:
+                logger.error(f"Orchestrator error for session {session_id}: {e}")
+                await websocket.send_json({
+                    "type": "response.text",
+                    "text": "Something went wrong processing your request. Please try again.",
+                    "is_final": True,
+                })
+                await websocket.send_json({
+                    "type": "agent.state",
+                    "state": "idle",
+                })
+                return
+
+        # Update conversation history (sliding window of last 10 turns)
+        if session_id not in _conversation_histories:
+            _conversation_histories[session_id] = []
+        _conversation_histories[session_id].append({"role": "user", "content": content})
+        _conversation_histories[session_id].append({"role": "assistant", "content": result.text})
+        # Keep only last 10 turns (20 messages)
+        _conversation_histories[session_id] = _conversation_histories[session_id][-20:]
+
+        # Handle confirmation-required tool responses
+        if result.needs_confirmation:
+            await websocket.send_json({
+                "type": "tool.confirm_request",
+                "message": result.text,
+                "payload": result.confirmation_payload,
+            })
+            await websocket.send_json({
+                "type": "agent.state",
+                "state": "idle",
+            })
+            return
+
+        # Send response with cost metadata
+        response_event = {
             "type": "response.text",
-            "text": f"[Echo] You said: {content}",
+            "text": result.text,
             "is_final": True,
-        })
+            "metadata": {
+                "model": result.model_used,
+                "cost_usd": result.cost_usd,
+                "latency_ms": result.latency_ms,
+                "is_tool_result": result.is_tool_result,
+            },
+        }
+        if result.tool_data:
+            response_event["tool_data"] = result.tool_data
+
+        await websocket.send_json(response_event)
 
         await websocket.send_json({
             "type": "agent.state",
