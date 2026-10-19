@@ -10,7 +10,7 @@ import uuid
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.db.database import async_session_factory
+from app.db import database
 from app.orchestrator.engine import get_orchestrator
 from app.services.session_service import get_session_by_token, touch_session
 
@@ -81,7 +81,7 @@ async def websocket_endpoint(
             return
 
         # Validate token
-        async with async_session_factory() as db:
+        async with database.async_session_factory() as db:
             session = await get_session_by_token(db, data["session_token"])
             if session is None or str(session.id) != session_id:
                 await websocket.send_json({
@@ -162,7 +162,7 @@ async def handle_text_event(websocket: WebSocket, session_id: str, data: dict):
         history = _conversation_histories.get(session_id, [])
 
         # Route through orchestrator
-        async with async_session_factory() as db:
+        async with database.async_session_factory() as db:
             orchestrator = get_orchestrator()
             try:
                 result = await orchestrator.process_message(
