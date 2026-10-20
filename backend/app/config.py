@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     # --- Database ---
-    DATABASE_URL: str = "postgresql+asyncpg://companion:companion@localhost:5432/companion"
+    DATABASE_URL: str = "postgresql+psycopg://postgres:dhanush%4045@localhost:5432/multilingual3d"
 
     # --- Redis ---
     REDIS_URL: str = "redis://localhost:6379/0"
