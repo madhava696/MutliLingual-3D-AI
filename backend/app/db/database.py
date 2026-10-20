@@ -36,6 +36,14 @@ async def init_db():
         expire_on_commit=False,
     )
 
+    # Ensure tables exist
+    import app.models  # noqa: F401
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as e:
+        print(f"[DB Init Warning] Table auto-creation notice: {e}")
+
 
 async def close_db():
     """Close the database engine."""

@@ -2,6 +2,9 @@
 
 from fastapi import APIRouter
 
+from app.api.v1.audio import router as audio_router
+from app.api.v1.chat import router as chat_router
+from app.api.v1.files import router as files_router
 from app.api.v1.health import router as health_router
 from app.api.v1.notes import router as notes_router
 from app.api.v1.reminders import router as reminders_router
@@ -13,7 +16,10 @@ api_router = APIRouter()
 
 api_router.include_router(health_router)
 api_router.include_router(sessions_router)
+api_router.include_router(chat_router)
 api_router.include_router(reminders_router)
 api_router.include_router(notes_router)
+api_router.include_router(files_router)
+api_router.include_router(audio_router)
 api_router.include_router(usage_router)
 api_router.include_router(websocket_router)

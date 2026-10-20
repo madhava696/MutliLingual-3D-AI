@@ -30,7 +30,8 @@ async def create_session(
         expires_at=now + timedelta(minutes=settings.SESSION_TTL_MINUTES),
     )
     db.add(session)
-    await db.flush()
+    await db.commit()
+    await db.refresh(session)
     return session
 
 

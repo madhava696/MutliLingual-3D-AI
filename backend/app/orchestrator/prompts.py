@@ -38,6 +38,6 @@ def format_conversation_history(messages: List[dict]) -> str:
     formatted = []
     for msg in messages[-6:]:  # Keep last 6 turns for prompt economy
         role = "User" if msg.get("role") == "user" else "Companion"
-        content = msg.get("content", "")
+        content = msg.get("content") or msg.get("text", "")
         formatted.append(f"{role}: {content}")
     return "\n".join(formatted)
