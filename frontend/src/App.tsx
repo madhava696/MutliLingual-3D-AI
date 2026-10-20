@@ -1,626 +1,112 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Activity,
-  CheckCircle2,
-  Cpu,
-  Database,
-  Globe,
-  KeyRound,
-  Layers,
-  RefreshCw,
-  Server,
-  ShieldCheck,
-  Sparkles,
-  Terminal,
+  ArrowRight, AudioLines, BookOpen, Check, ChevronDown, CircleHelp, Clock3, FileText,
+  Globe2, House, Languages, LockKeyhole, LogOut, Menu, MessageCircle, Mic,
+  MoreHorizontal, PanelLeftClose, Pencil, Plus, Search, Send, Settings2,
+  ShieldCheck, Sparkles, Trash2, UserRound, X,
 } from 'lucide-react';
 
-interface HealthData {
-  status: string;
-  version: string;
-  name: string;
-}
+type Language = 'te' | 'hi' | 'en';
+type SessionData = { session_id: string; session_token: string; language: string; private_mode: boolean; expires_at: string };
+type Chat = { id: string; title: string; updatedAt: number; messages: { role: 'user' | 'assistant'; text: string }[] };
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+const HISTORY_KEY = 'mann_local_chats_v1';
+const SESSION_KEY = 'mann_session_v1';
 
-interface SessionData {
-  session_id: string;
-  session_token: string;
-  language: string;
-  private_mode: boolean;
-  expires_at: string;
-}
+function readChats(): Chat[] { try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]') as Chat[]; } catch { return []; } }
+function shortDate(ts: number) { const d = new Date(ts); const now = new Date(); if (d.toDateString() === now.toDateString()) return 'Today'; const y = new Date(); y.setDate(y.getDate() - 1); if (d.toDateString() === y.toDateString()) return 'Yesterday'; return d.toLocaleDateString(); }
 
 export default function App() {
-  const [selectedLang, setSelectedLang] = useState<'te' | 'hi' | 'en'>('te');
-  const [backendStatus, setBackendStatus] = useState<'checking' | 'connected' | 'disconnected'>('checking');
-  const [healthData, setHealthData] = useState<HealthData | null>(null);
-  const [pingMs, setPingMs] = useState<number | null>(null);
-  const [session, setSession] = useState<SessionData | null>(null);
-  const [sessionLoading, setSessionLoading] = useState(false);
-  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [session, setSession] = useState<SessionData | null>(() => { try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; } });
+  const [loginView, setLoginView] = useState(!session);
+  const [language, setLanguage] = useState<Language>('en');
+  const [avatar, setAvatar] = useState<'man' | 'woman'>(() => (localStorage.getItem('mann_avatar') as 'man' | 'woman') || 'man');
+  const [backend, setBackend] = useState<'checking' | 'online' | 'offline'>('checking');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [chats, setChats] = useState<Chat[]>(readChats);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [message, setMessage] = useState('');
+  const [page, setPage] = useState<'chat' | 'notes' | 'reminders' | 'pdf' | 'research' | 'settings'>('chat');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [menuId, setMenuId] = useState<string | null>(null);
+  const [renameId, setRenameId] = useState<string | null>(null);
+  const [renameText, setRenameText] = useState('');
+  const [toast, setToast] = useState('');
+  const [healthText, setHealthText] = useState('Checking backend…');
 
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+  const activeChat = chats.find(c => c.id === activeId) || null;
+  const visibleChats = useMemo(() => chats.filter(c => c.title.toLowerCase().includes(search.toLowerCase())).sort((a,b) => b.updatedAt-a.updatedAt), [chats, search]);
+  const persistChats = useCallback((next: Chat[]) => { setChats(next); localStorage.setItem(HISTORY_KEY, JSON.stringify(next)); }, []);
 
-  const checkHealth = useCallback(async () => {
-    setBackendStatus('checking');
-    const start = performance.now();
+  const checkBackend = useCallback(async () => {
+    try { const r = await fetch(`${API_BASE}/api/v1/health`); if (!r.ok) throw new Error(); const d = await r.json(); setBackend('online'); setHealthText(`${d.name || 'Mann API'} connected`); }
+    catch { setBackend('offline'); setHealthText(`Backend unavailable at ${API_BASE}`); }
+  }, []);
+  useEffect(() => { void checkBackend(); }, [checkBackend]);
+
+  const startSession = async () => {
+    setBusy(true); setError('');
     try {
-      const res = await fetch(`${API_BASE}/api/v1/health`, { method: 'GET' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const elapsed = Math.round(performance.now() - start);
-      setHealthData(data);
-      setPingMs(elapsed);
-      setBackendStatus('connected');
-    } catch {
-      setBackendStatus('disconnected');
-      setHealthData(null);
-      setPingMs(null);
-    }
-  }, [API_BASE]);
-
-  const createSampleSession = async () => {
-    setSessionLoading(true);
-    setSessionError(null);
-    try {
-      const res = await fetch(`${API_BASE}/api/v1/sessions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          language: selectedLang,
-          private_mode: false,
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-      const data = await res.json();
-      setSession(data);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to connect to backend';
-      setSessionError(message);
-    } finally {
-      setSessionLoading(false);
-    }
+      const r = await fetch(`${API_BASE}/api/v1/sessions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ language, private_mode: false }) });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.detail || `Backend returned HTTP ${r.status}`);
+      const s = data as SessionData; localStorage.setItem(SESSION_KEY, JSON.stringify(s)); setSession(s); setLoginView(false); setToast('Your companion session is ready.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not connect. Start the backend and try again.'); }
+    finally { setBusy(false); }
   };
+  const newChat = () => { const c: Chat = { id: crypto.randomUUID(), title: 'New conversation', updatedAt: Date.now(), messages: [] }; persistChats([c, ...chats]); setActiveId(c.id); setPage('chat'); setSidebarOpen(true); };
+  const openChat = (id: string) => { setActiveId(id); setPage('chat'); setMenuId(null); };
+  const sendMessage = () => {
+    const text = message.trim(); if (!text) return;
+    let c = activeChat;
+    if (!c) { c = { id: crypto.randomUUID(), title: text.slice(0, 42), updatedAt: Date.now(), messages: [] }; }
+    const updated: Chat = { ...c, title: c.messages.length ? c.title : text.slice(0, 42), updatedAt: Date.now(), messages: [...c.messages, { role: 'user', text }, { role: 'assistant', text: 'Your message is saved in this browser. The repository backend does not currently expose a chat-response endpoint, so live AI replies still need backend support.' }] };
+    persistChats([updated, ...chats.filter(x => x.id !== updated.id)]); setActiveId(updated.id); setMessage('');
+  };
+  const renameChat = (id: string) => { const title = renameText.trim(); if (!title) return; persistChats(chats.map(c => c.id === id ? { ...c, title, updatedAt: Date.now() } : c)); setRenameId(null); setMenuId(null); };
+  const deleteChat = (id: string) => { const next = chats.filter(c => c.id !== id); persistChats(next); if (activeId === id) setActiveId(null); setMenuId(null); };
+  const logout = () => { localStorage.removeItem(SESSION_KEY); setSession(null); setLoginView(true); setActiveId(null); };
+  const chooseAvatar = (v: 'man' | 'woman') => { setAvatar(v); localStorage.setItem('mann_avatar', v); };
 
-  useEffect(() => {
-    let ignore = false;
-    const fetchInitialHealth = async () => {
-      const start = performance.now();
-      try {
-        const res = await fetch(`${API_BASE}/api/v1/health`, { method: 'GET' });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        const elapsed = Math.round(performance.now() - start);
-        if (!ignore) {
-          setHealthData(data);
-          setPingMs(elapsed);
-          setBackendStatus('connected');
-        }
-      } catch {
-        if (!ignore) {
-          setBackendStatus('disconnected');
-          setHealthData(null);
-          setPingMs(null);
-        }
-      }
-    };
-    fetchInitialHealth();
-    return () => {
-      ignore = true;
-    };
-  }, [API_BASE]);
+  if (loginView) return <main className="login-shell">
+    <section className="login-left"><div className="brand"><span className="brand-mark"><Sparkles size={25}/></span><span><b>mann<span className="brand-dot">.</span></b><small>YOUR AI COMPANION</small></span></div>
+      <div className="login-copy"><span className="eyebrow"><span className="eyebrow-dot"/> YOUR SPACE, YOUR LANGUAGE</span><h1>A little help.<br/><em>A lot more possible.</em></h1><p>A personal AI companion for learning, creating and getting things done—in the language that feels natural to you.</p>
+      <div className="login-benefits"><div><span><Languages/></span><b>Made for your language</b><small>Telugu, Hindi and English</small></div><div><span><ShieldCheck/></span><b>Private by design</b><small>Session-based access</small></div></div></div>
+      <div className="login-foot">A thoughtful companion for everyday life <span>✳</span></div>
+    </section>
+    <section className="login-right"><div className="login-card"><div className="mobile-brand brand"><span className="brand-mark"><Sparkles size={23}/></span><span><b>mann<span className="brand-dot">.</span></b><small>YOUR AI COMPANION</small></span></div>
+      <div className="avatar-preview"><div className="avatar-orbit orbit-one"/><div className="avatar-orbit orbit-two"/><div className="avatar-person"><div className="avatar-hair"/><div className="avatar-face"><span className="eye eye-left"/><span className="eye eye-right"/><span className="nose"/><span className="mouth"/></div><div className="avatar-neck"/><div className="avatar-body"/></div><span className="avatar-chip"><span/> Your companion is ready</span></div>
+      <span className="eyebrow">WELCOME TO MANN</span><h2>Let's get started.</h2><p className="muted">Create a private companion session to enter your space.</p>
+      <label className="field-label" htmlFor="language">Choose your language</label><div className="select-wrap"><Languages size={19}/><select id="language" value={language} onChange={e => setLanguage(e.target.value as Language)}><option value="en">English</option><option value="te">తెలుగు (Telugu)</option><option value="hi">हिन्दी (Hindi)</option></select><ChevronDown size={17}/></div>
+      <label className="field-label">Choose your companion</label><div className="avatar-choice"><button className={avatar === 'man' ? 'choice active' : 'choice'} onClick={() => chooseAvatar('man')}><span className="choice-icon man-icon"><UserRound/></span><span><b>Man</b><small>Male companion</small></span>{avatar === 'man' && <Check className="choice-check" size={18}/>}</button><button className={avatar === 'woman' ? 'choice active' : 'choice'} onClick={() => chooseAvatar('woman')}><span className="choice-icon woman-icon"><UserRound/></span><span><b>Woman</b><small>Female companion</small></span>{avatar === 'woman' && <Check className="choice-check" size={18}/>}</button></div>
+      {error && <div className="error-box">{error}</div>}
+      <button className="primary-btn login-btn" disabled={busy} onClick={() => void startSession()}>{busy ? 'Connecting…' : 'Continue to Mann'}{!busy && <ArrowRight size={19}/>}</button>
+      <div className="login-secure"><LockKeyhole size={14}/> Connects to your Mann backend to create a session</div>
+      <div className={'backend-note ' + backend}><span/> {backend === 'online' ? 'Backend connected' : backend === 'checking' ? 'Checking backend connection' : 'Backend offline — start it to continue'}</div>
+      <p className="login-disclaimer">This uses the repository's session-based access, not an email/password account. Account registration is not available in the current backend.</p>
+    </div></section>
+  </main>;
 
-  return (
-    <div style={{ maxWidth: 1240, margin: '0 auto', padding: '32px 24px' }}>
-      {/* Top Header */}
-      <header
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 40,
-          paddingBottom: 20,
-          borderBottom: '1px solid var(--border-subtle)',
-          flexWrap: 'wrap',
-          gap: 16,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 12,
-              background: 'linear-gradient(135deg, #f97316 0%, #6366f1 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 0 20px rgba(99, 102, 241, 0.4)',
-            }}
-          >
-            <Sparkles size={24} color="#ffffff" />
-          </div>
-          <div>
-            <h1 style={{ fontSize: '1.45rem', fontWeight: 700, margin: 0 }}>
-              <span className="gradient-tricolor">India-first</span> 3D AI Companion
-            </h1>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
-              hackFront India 2026 • Open Innovation Baseline
-            </p>
-          </div>
-        </div>
-
-        {/* Controls / Status Pill */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          {/* Language Selector */}
-          <div
-            style={{
-              display: 'flex',
-              background: 'rgba(255, 255, 255, 0.05)',
-              padding: '4px',
-              borderRadius: '10px',
-              border: '1px solid var(--border-subtle)',
-            }}
-          >
-            {(['te', 'hi', 'en'] as const).map((lang) => (
-              <button
-                key={lang}
-                onClick={() => setSelectedLang(lang)}
-                style={{
-                  background: selectedLang === lang ? 'rgba(99, 102, 241, 0.35)' : 'transparent',
-                  color: selectedLang === lang ? '#ffffff' : 'var(--text-muted)',
-                  border: selectedLang === lang ? '1px solid rgba(99, 102, 241, 0.5)' : '1px solid transparent',
-                  padding: '6px 14px',
-                  borderRadius: 8,
-                  fontSize: '0.82rem',
-                  fontWeight: selectedLang === lang ? 600 : 400,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                {lang === 'te' ? 'తెలుగు' : lang === 'hi' ? 'हिन्दी' : 'English'}
-              </button>
-            ))}
-          </div>
-
-          {/* Backend Status Pill */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '6px 14px',
-              borderRadius: 20,
-              background:
-                backendStatus === 'connected'
-                  ? 'rgba(16, 185, 129, 0.12)'
-                  : backendStatus === 'checking'
-                  ? 'rgba(249, 115, 22, 0.12)'
-                  : 'rgba(239, 68, 68, 0.12)',
-              border: `1px solid ${
-                backendStatus === 'connected'
-                  ? 'rgba(16, 185, 129, 0.3)'
-                  : backendStatus === 'checking'
-                  ? 'rgba(249, 115, 22, 0.3)'
-                  : 'rgba(239, 68, 68, 0.3)'
-              }`,
-              fontSize: '0.82rem',
-              fontWeight: 500,
-              color:
-                backendStatus === 'connected'
-                  ? '#34d399'
-                  : backendStatus === 'checking'
-                  ? '#fb923c'
-                  : '#f87171',
-            }}
-          >
-            <span
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                background:
-                  backendStatus === 'connected'
-                    ? '#10b981'
-                    : backendStatus === 'checking'
-                    ? '#f97316'
-                    : '#ef4444',
-                boxShadow:
-                  backendStatus === 'connected'
-                    ? '0 0 10px #10b981'
-                    : backendStatus === 'checking'
-                    ? '0 0 10px #f97316'
-                    : '0 0 10px #ef4444',
-              }}
-            />
-            {backendStatus === 'connected'
-              ? `API Online (${pingMs}ms)`
-              : backendStatus === 'checking'
-              ? 'Checking API...'
-              : 'API Offline (localhost:8000)'}
-            <button
-              onClick={checkHealth}
-              title="Refresh connection"
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'inherit',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                padding: 0,
-              }}
-            >
-              <RefreshCw size={13} />
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Hero Banner */}
-      <section
-        className="glass-panel"
-        style={{
-          padding: '36px 32px',
-          marginBottom: 32,
-          position: 'relative',
-          overflow: 'hidden',
-          background: 'linear-gradient(135deg, rgba(20, 27, 45, 0.8) 0%, rgba(13, 18, 31, 0.9) 100%)',
-        }}
-      >
-        <div
-          style={{
-            position: 'absolute',
-            top: -60,
-            right: -60,
-            width: 200,
-            height: 200,
-            background: 'radial-gradient(circle, rgba(99, 102, 241, 0.25) 0%, transparent 70%)',
-            borderRadius: '50%',
-            filter: 'blur(30px)',
-          }}
-        />
-        <div style={{ maxWidth: 780, position: 'relative', zIndex: 1 }}>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '4px 12px',
-              borderRadius: 16,
-              background: 'rgba(99, 102, 241, 0.15)',
-              border: '1px solid rgba(99, 102, 241, 0.3)',
-              color: '#818cf8',
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              marginBottom: 16,
-              textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-            }}
-          >
-            <ShieldCheck size={14} /> Phase 0 Foundation Verified
-          </div>
-          <h2 style={{ fontSize: '2.1rem', fontWeight: 700, marginBottom: 12, lineHeight: 1.25 }}>
-            Multilingual Voice & 3D Companion Backbone
-          </h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '1rem', lineHeight: 1.6, marginBottom: 24 }}>
-            FastAPI async backend paired with Vite React 19 frontend, PostgreSQL async storage, and Redis ephemeral caching.
-            Engineered with cryptographically isolated session tokens and intelligent cost-aware routing.
-          </p>
-
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '8px 14px',
-                borderRadius: 8,
-                background: 'rgba(255, 255, 255, 0.04)',
-                border: '1px solid var(--border-subtle)',
-                fontSize: '0.85rem',
-              }}
-            >
-              <Cpu size={16} color="#6366f1" />
-              <span>FastAPI 0.110 Async</span>
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '8px 14px',
-                borderRadius: 8,
-                background: 'rgba(255, 255, 255, 0.04)',
-                border: '1px solid var(--border-subtle)',
-                fontSize: '0.85rem',
-              }}
-            >
-              <Database size={16} color="#10b981" />
-              <span>PostgreSQL + Redis 7</span>
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '8px 14px',
-                borderRadius: 8,
-                background: 'rgba(255, 255, 255, 0.04)',
-                border: '1px solid var(--border-subtle)',
-                fontSize: '0.85rem',
-              }}
-            >
-              <Globe size={16} color="#f97316" />
-              <span>Telugu • Hindi • English</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Main Grid: Phase 0 Status & Architecture Verification */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 24, marginBottom: 32 }}>
-        {/* Card 1: Live API Health & Metadata */}
-        <div className="glass-panel" style={{ padding: 24 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 8,
-                  background: 'rgba(16, 185, 129, 0.15)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Server size={20} color="#10b981" />
-              </div>
-              <h3 style={{ fontSize: '1.1rem', margin: 0 }}>API Health Check</h3>
-            </div>
-            <span
-              style={{
-                fontSize: '0.75rem',
-                padding: '3px 8px',
-                borderRadius: 6,
-                background: 'rgba(255,255,255,0.06)',
-                color: 'var(--text-muted)',
-              }}
-            >
-              GET /api/v1/health
-            </span>
-          </div>
-
-          <div style={{ background: 'rgba(0, 0, 0, 0.35)', borderRadius: 10, padding: 14, marginBottom: 16 }}>
-            {healthData ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: '0.85rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-dim)' }}>Service Name:</span>
-                  <span style={{ fontWeight: 600 }}>{healthData.name}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-dim)' }}>Version:</span>
-                  <span style={{ color: '#38bdf8' }}>v{healthData.version}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-dim)' }}>Latency:</span>
-                  <span style={{ color: '#34d399' }}>{pingMs} ms</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-dim)' }}>Status Code:</span>
-                  <span style={{ color: '#10b981' }}>200 OK</span>
-                </div>
-              </div>
-            ) : (
-              <p style={{ color: 'var(--text-dim)', fontSize: '0.85rem', margin: 0 }}>
-                {backendStatus === 'checking'
-                  ? 'Connecting to backend...'
-                  : 'Start the backend using `uvicorn app.main:app --reload` to test live endpoints.'}
-              </p>
-            )}
-          </div>
-
-          <button
-            onClick={checkHealth}
-            style={{
-              width: '100%',
-              padding: '10px 16px',
-              borderRadius: 8,
-              background: 'rgba(99, 102, 241, 0.2)',
-              border: '1px solid rgba(99, 102, 241, 0.4)',
-              color: '#ffffff',
-              fontSize: '0.85rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <Activity size={16} /> Re-test Health Endpoint
-          </button>
-        </div>
-
-        {/* Card 2: Session Security Handshake Simulation */}
-        <div className="glass-panel" style={{ padding: 24 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 8,
-                  background: 'rgba(99, 102, 241, 0.15)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <KeyRound size={20} color="#818cf8" />
-              </div>
-              <h3 style={{ fontSize: '1.1rem', margin: 0 }}>Session Auth Architecture</h3>
-            </div>
-            <span
-              style={{
-                fontSize: '0.75rem',
-                padding: '3px 8px',
-                borderRadius: 6,
-                background: 'rgba(255,255,255,0.06)',
-                color: 'var(--text-muted)',
-              }}
-            >
-              POST /api/v1/sessions
-            </span>
-          </div>
-
-          <div style={{ background: 'rgba(0, 0, 0, 0.35)', borderRadius: 10, padding: 14, marginBottom: 16 }}>
-            {session ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: '0.8rem' }}>
-                <div>
-                  <span style={{ color: 'var(--text-dim)', display: 'block' }}>Public Session ID:</span>
-                  <code style={{ color: '#a5b4fc', fontSize: '0.75rem', wordBreak: 'break-all' }}>{session.session_id}</code>
-                </div>
-                <div>
-                  <span style={{ color: 'var(--text-dim)', display: 'block' }}>Secret Session Token (X-Session-Token):</span>
-                  <code style={{ color: '#34d399', fontSize: '0.72rem', wordBreak: 'break-all' }}>
-                    {session.session_token.slice(0, 20)}...[crypto protected]
-                  </code>
-                </div>
-              </div>
-            ) : (
-              <p style={{ color: 'var(--text-dim)', fontSize: '0.85rem', margin: 0 }}>
-                {sessionError
-                  ? `Error: ${sessionError}`
-                  : 'Demonstrates public session_id vs secrets.token_urlsafe(48) authentication protocol.'}
-              </p>
-            )}
-          </div>
-
-          <button
-            onClick={createSampleSession}
-            disabled={sessionLoading || backendStatus !== 'connected'}
-            style={{
-              width: '100%',
-              padding: '10px 16px',
-              borderRadius: 8,
-              background: backendStatus === 'connected' ? 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)' : 'rgba(255,255,255,0.05)',
-              border: 'none',
-              color: backendStatus === 'connected' ? '#ffffff' : 'var(--text-dim)',
-              fontSize: '0.85rem',
-              fontWeight: 600,
-              cursor: backendStatus === 'connected' ? 'pointer' : 'not-allowed',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-            }}
-          >
-            <ShieldCheck size={16} />
-            {sessionLoading ? 'Negotiating Credentials...' : 'Test Session Handshake'}
-          </button>
-        </div>
-
-        {/* Card 3: Phase 0 Checklist Verification */}
-        <div className="glass-panel" style={{ padding: 24 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 8,
-                  background: 'rgba(249, 115, 22, 0.15)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Layers size={20} color="#f97316" />
-              </div>
-              <h3 style={{ fontSize: '1.1rem', margin: 0 }}>Phase 0 DoD Status</h3>
-            </div>
-            <span
-              style={{
-                fontSize: '0.75rem',
-                padding: '3px 8px',
-                borderRadius: 6,
-                background: 'rgba(16, 185, 129, 0.12)',
-                color: '#34d399',
-                border: '1px solid rgba(16, 185, 129, 0.3)',
-              }}
-            >
-              100% Ready
-            </span>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {[
-              { id: 'T-001', title: 'FastAPI Backend & /health Endpoint', ok: true },
-              { id: 'T-002', title: 'Vite + React 19 + TypeScript Scaffold', ok: true },
-              { id: 'T-003', title: 'Docker Compose (FastAPI, React, PG, Redis)', ok: true },
-              { id: 'T-004', title: 'Environment Config (.env.example)', ok: true },
-              { id: 'T-005', title: 'Tooling Config (Ruff & Pytest passed)', ok: true },
-            ].map((task) => (
-              <div
-                key={task.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '8px 12px',
-                  borderRadius: 8,
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid var(--border-subtle)',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <CheckCircle2 size={16} color="#10b981" />
-                  <span style={{ fontSize: '0.82rem', color: 'var(--text-main)' }}>{task.title}</span>
-                </div>
-                <code style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>{task.id}</code>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Developer Quick Reference Bar */}
-      <footer
-        className="glass-panel"
-        style={{
-          padding: '18px 24px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 16,
-          fontSize: '0.85rem',
-          color: 'var(--text-muted)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Terminal size={16} color="#6366f1" />
-          <span>
-            Backend:{' '}
-            <code style={{ color: '#a5b4fc', background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: 4 }}>
-              uvicorn app.main:app --reload
-            </code>
-          </span>
-          <span style={{ margin: '0 8px' }}>•</span>
-          <span>
-            Frontend:{' '}
-            <code style={{ color: '#a5b4fc', background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: 4 }}>
-              npm run dev
-            </code>
-          </span>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <span>Code Freeze: <strong>Oct 23, 2026</strong></span>
-          <span style={{ color: '#10b981', fontWeight: 600 }}>● Phase 0 Complete</span>
-        </div>
-      </footer>
-    </div>
-  );
+  return <div className="app-shell">
+    {sidebarOpen && <aside className="sidebar"><div className="sidebar-brand"><div className="brand"><span className="brand-mark"><Sparkles size={23}/></span><span><b>mann<span className="brand-dot">.</span></b><small>YOUR AI COMPANION</small></span></div><button className="icon-btn collapse-btn" title="Hide sidebar" onClick={() => setSidebarOpen(false)}><PanelLeftClose size={19}/></button></div>
+      <button className="new-chat-btn" onClick={newChat}><Plus size={19}/> New conversation</button><div className="side-label">YOUR SPACE</div>
+      <nav className="side-nav"><button className={page === 'chat' ? 'nav-item selected' : 'nav-item'} onClick={() => setPage('chat')}><House/>Chat</button><button className={page === 'notes' ? 'nav-item selected' : 'nav-item'} onClick={() => setPage('notes')}><FileText/>Notes</button><button className={page === 'reminders' ? 'nav-item selected' : 'nav-item'} onClick={() => setPage('reminders')}><Clock3/>Reminders</button><button className={page === 'pdf' ? 'nav-item selected' : 'nav-item'} onClick={() => setPage('pdf')}><BookOpen/>PDF Assistant</button><button className={page === 'research' ? 'nav-item selected' : 'nav-item'} onClick={() => setPage('research')}><Globe2/>Web Research</button></nav>
+      <div className="recent-heading"><span>RECENTS</span><span className="count-pill">{chats.length}</span></div><div className="search-box"><Search size={17}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search chats" aria-label="Search chats"/>{search && <button onClick={() => setSearch('')}><X size={14}/></button>}</div>
+      <div className="chat-list">{visibleChats.length ? visibleChats.map(c => <div key={c.id} className={'chat-row ' + (c.id === activeId ? 'current' : '')}><button className="chat-open" onClick={() => openChat(c.id)}><MessageCircle size={17}/><span className="chat-open-text"><span>{c.title}</span><small>{shortDate(c.updatedAt)}</small></span></button><button className="chat-more" onClick={() => setMenuId(menuId === c.id ? null : c.id)} aria-label="Conversation options"><MoreHorizontal size={18}/></button>{menuId === c.id && <div className="chat-menu"><button onClick={() => { setRenameId(c.id); setRenameText(c.title); setMenuId(null); }}><Pencil size={15}/>Rename</button><button className="danger" onClick={() => deleteChat(c.id)}><Trash2 size={15}/>Delete</button></div>}{renameId === c.id && <form className="rename-form" onSubmit={e => {e.preventDefault(); renameChat(c.id);}}><input autoFocus value={renameText} onChange={e => setRenameText(e.target.value)}/><button type="submit"><Check size={15}/></button></form>}</div>) : <p className="empty-recents">{search ? 'No matching conversations.' : 'Your chats will appear here.'}</p>}</div>
+      <div className="sidebar-bottom"><button className={page === 'settings' ? 'nav-item selected' : 'nav-item'} onClick={() => setPage('settings')}><Settings2/>Profile & settings</button><button className="nav-item logout-nav" onClick={logout}><LogOut/>End session</button><div className="user-chip"><span className="user-avatar"><UserRound size={18}/></span><span><b>Guest session</b><small>{session?.session_id ? session.session_id.slice(0, 8) + '…' : 'Local session'}</small></span><ShieldCheck size={17} className="user-shield"/></div></div>
+    </aside>}
+    <main className="main-area"><header className="topbar"><div className="crumbs">{!sidebarOpen && <button className="icon-btn" onClick={() => setSidebarOpen(true)}><Menu size={20}/></button>}<span>Mann</span><span className="slash">/</span><b>{page === 'chat' ? 'Home' : page === 'settings' ? 'Profile & settings' : page === 'pdf' ? 'PDF Assistant' : page === 'research' ? 'Web Research' : page[0].toUpperCase()+page.slice(1)}</b></div><div className="top-actions"><span className={'connection-pill ' + backend}><span/>{backend === 'online' ? 'Connected' : backend === 'checking' ? 'Checking' : 'Offline'}</span><span className="top-language"><Languages size={17}/><select value={language} onChange={e => setLanguage(e.target.value as Language)}><option value="en">English</option><option value="te">తెలుగు</option><option value="hi">हिन्दी</option></select></span><button className="privacy-pill" title="Session privacy"><ShieldCheck size={16}/> Session mode</button><span className="top-avatar">{avatar === 'man' ? 'M' : 'W'}</span></div></header>
+      <div className="content-wrap">{page === 'chat' && <>
+        <div className="welcome-head"><span className="eyebrow">YOUR PERSONAL AI COMPANION</span><h1>{activeChat ? activeChat.title : <>Hey there, <em>friend</em> <span className="sunburst">✳</span></>}</h1><p>I'm here to help you think, learn, and get things done.</p></div>
+        <section className="hero-card"><div className="hero-copy"><span className="ready-badge"><span/> YOUR COMPANION IS READY</span><h2>A little help.<br/><em>A lot more possible.</em></h2><p>Ask a question, explore an idea, or simply start talking. We'll figure it out together.</p><button className="primary-btn" onClick={() => { if (!activeChat) newChat(); document.getElementById('chat-input')?.focus(); }}><Mic size={18}/> Start a conversation</button><span className="voice-hint"><AudioLines size={18}/> Voice or text, your choice</span></div><div className="hero-avatar-panel"><span className="avatar-label"><span/> {avatar === 'man' ? 'MAN' : 'WOMAN'} COMPANION</span><div className={'illustration-human ' + avatar}><div className="human-hair"/><div className="human-head"><i className="human-eye left"/><i className="human-eye right"/><i className="human-nose"/><i className="human-mouth"/></div><div className="human-neck"/><div className="human-shirt"/></div><span className="model-note">Avatar preview · 3D model not installed</span><span className="avatar-caption"><span/> Mann <i>·</i> Your AI companion</span></div></section>
+        {activeChat?.messages.length ? <section className="messages-panel">{activeChat.messages.map((m,i)=><div key={i} className={'message ' + m.role}><span className="message-icon">{m.role === 'user' ? <UserRound size={17}/> : <Sparkles size={17}/>}</span><div><b>{m.role === 'user' ? 'You' : 'Mann'}</b><p>{m.text}</p></div></div>)}</section> : <section className="suggestions"><div className="section-title"><div><h3>What can we do today?</h3><p>A few good places to start.</p></div><span className="suggestion-mark">✳</span></div><div className="suggestion-grid"><button onClick={() => setMessage('Help me understand a difficult topic')}><span className="suggestion-icon purple"><BookOpen/></span><b>Learn something</b><small>Explain a topic simply</small><ArrowRight/></button><button onClick={() => setMessage('Help me organize my day')}><span className="suggestion-icon green"><FileText/></span><b>Get organized</b><small>Plan your next steps</small><ArrowRight/></button><button onClick={() => setPage('research')}><span className="suggestion-icon orange"><Globe2/></span><b>Explore an idea</b><small>Research a question</small><ArrowRight/></button></div></section>}
+        <form className="composer" onSubmit={e => {e.preventDefault(); sendMessage();}}><button type="button" className="composer-add" title="Attach a file" onClick={() => setPage('pdf')}><Plus size={21}/></button><input id="chat-input" value={message} onChange={e => setMessage(e.target.value)} placeholder="Message Mann…"/><button type="button" className="mic-btn" title="Voice input is not connected yet" onClick={() => setToast('Voice input is not connected in this frontend yet.')}><Mic size={19}/></button><button className="send-btn" type="submit" disabled={!message.trim()} aria-label="Send message"><Send size={18}/></button></form><p className="composer-note">Mann can make mistakes. Check important information.</p>
+      </>}
+      {page !== 'chat' && <section className="simple-page"><span className="eyebrow">MANN AI COMPANION</span><h1>{page === 'settings' ? 'Your preferences' : page === 'notes' ? 'Your notes' : page === 'reminders' ? 'Your reminders' : page === 'pdf' ? 'Ask your documents' : 'Explore the web'}</h1><p>{page === 'settings' ? 'Personalize your companion experience.' : page === 'notes' ? 'Keep useful thoughts in one place.' : page === 'reminders' ? 'Keep track of what matters.' : page === 'pdf' ? 'Choose a PDF to get started.' : 'Explore a topic you are curious about.'}</p>
+        {page === 'settings' ? <div className="settings-card"><h3>Companion appearance</h3><p>Choose the companion shown in your interface.</p><div className="avatar-choice settings-choices"><button className={avatar === 'man' ? 'choice active' : 'choice'} onClick={() => chooseAvatar('man')}><span className="choice-icon man-icon"><UserRound/></span><span><b>Man</b><small>Male companion</small></span>{avatar === 'man' && <Check className="choice-check" size={18}/>}</button><button className={avatar === 'woman' ? 'choice active' : 'choice'} onClick={() => chooseAvatar('woman')}><span className="choice-icon woman-icon"><UserRound/></span><span><b>Woman</b><small>Female companion</small></span>{avatar === 'woman' && <Check className="choice-check" size={18}/>}</button></div><h3>Backend connection</h3><p>{healthText}</p><button className="secondary-btn" onClick={() => void checkBackend()}>Check connection</button><h3>Session</h3><p>This backend supports session-based access. It does not currently provide email/password account login.</p><button className="secondary-btn" onClick={logout}><LogOut size={17}/> End session</button></div> : page === 'pdf' ? <div className="upload-card"><FileText size={35}/><h3>Choose a PDF file</h3><p>File selection UI only. Document parsing needs a connected backend feature.</p><label className="secondary-btn file-button">Choose PDF<input type="file" accept="application/pdf,.pdf" onChange={e => setToast(e.target.files?.[0] ? `${e.target.files[0].name} selected. PDF analysis is not connected yet.` : '')}/></label></div> : <div className="upload-card"><div className="upload-symbol">{page === 'notes' ? <FileText/> : page === 'reminders' ? <Clock3/> : <Globe2/>}</div><h3>{page === 'notes' ? 'Notes API available' : page === 'reminders' ? 'Reminders API available' : 'Research integration needed'}</h3><p>{page === 'research' ? 'Live web research is not connected to this frontend yet.' : `The existing backend has ${page} routes, but this page needs its full data workflow connected.`}</p><button className="secondary-btn" onClick={() => setToast('This feature is not fully connected yet.')}>Learn more <CircleHelp size={16}/></button></div>}</section>}
+      <footer className="page-footer"><span><Sparkles size={14}/> Made for you, in your language</span><span>Session data · Local chat history</span></footer></div>
+    </main>{toast && <div className="toast"><Check size={17}/>{toast}<button onClick={() => setToast('')}><X size={15}/></button></div>}
+  </div>;
 }
