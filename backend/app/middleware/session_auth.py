@@ -36,12 +36,14 @@ async def get_authenticated_session(
     Returns the Session object if the token is valid.
     Rejects requests where only session_id is provided.
     """
+    clean_token = session_token.strip().strip('"').strip("'")
     result = await db.execute(
-        select(Session).where(Session.session_token == session_token)
+        select(Session).where(Session.session_token == clean_token)
     )
     session = result.scalar_one_or_none()
 
     if session is None:
+        print(f"[AUTH_DEBUG] Token not found: {clean_token!r}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid session token",
@@ -59,10 +61,11 @@ async def verify_session_ownership(
     Verify that the session_token matches the given session_id.
     Used for endpoints that take session_id as a path parameter.
     """
+    clean_token = session_token.strip().strip('"').strip("'")
     result = await db.execute(
         select(Session).where(
             Session.id == session_id,
-            Session.session_token == session_token,
+            Session.session_token == clean_token,
         )
     )
     session = result.scalar_one_or_none()
